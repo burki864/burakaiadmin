@@ -19,19 +19,19 @@ const App: React.FC = () => {
 
   // --- CORE SECURITY ENGINE ---
   const checkSecurityContext = useCallback(async (currentSession: any) => {
-    // Eğer oturum yoksa güvenlik kontrolüne gerek yok
     if (!currentSession?.user) return { banned: false, details: null };
     
-    // ÖZEL DURUM: Manuel Admin girişi (burakisbest vb.) ise sorgusuz kabul et
+    // ÖZEL DURUM: Manuel Admin girişi (burakisbest vb.) ise direkt geçiş ver
     if (currentSession.user.id === 'nexus-admin-master') {
       return { banned: false, details: { username: 'Burak', role: 'SuperAdmin' } };
     }
-    
+
     try {
       if (isSupabaseConfigured) {
         const { data: profile, error: dbError } = await supabase
           .from('profiles')
-          .select('banned, ban_until, username')
+          // DÜZELTME: Tablonla uyumlu olması için 'banned_until' yaptık
+          .select('banned, banned_until, username') 
           .eq('id', currentSession.user.id)
           .maybeSingle();
 
@@ -39,30 +39,31 @@ const App: React.FC = () => {
           return { banned: !!profile.banned, details: profile };
         }
       }
-      return { banned: false, details: null };
+      
+      // Local/Demo Auth Logic
+      const demoUsers = JSON.parse(localStorage.getItem('nexus_demo_users') || '[]');
+      const me = demoUsers.find((u: any) => u.email === currentSession.user.email);
+      return { banned: !!me?.banned, details: me || null };
     } catch (e) {
+      console.error("Security probe failed:", e);
       return { banned: false, details: null };
     }
   }, []);
 
-  // --- SYNC ENGINE (Geliştirilmiş Öncelik Modu) ---
+  // --- SYNC ENGINE ---
   const syncAuthState = useCallback(async () => {
     let currentSession = null;
 
-    // 1. Önce LocalStorage'daki manuel oturumu kontrol et (burakisbest için en garantisi)
+    // ÖNCE: Manuel local session kontrolü (Öncelikli)
     const rawLocal = localStorage.getItem('nexus_demo_session');
     
     if (rawLocal) {
       currentSession = JSON.parse(rawLocal);
     } 
-    // 2. Eğer local yoksa ve Supabase varsa oradan çek
+    // SONRA: Supabase session kontrolü
     else if (isSupabaseConfigured) {
-      try {
-        const { data: { session: sbSession } } = await supabase.auth.getSession();
-        currentSession = sbSession;
-      } catch (e) {
-        console.warn("Supabase auth unreachable");
-      }
+      const { data: { session: sbSession } } = await supabase.auth.getSession();
+      currentSession = sbSession;
     }
 
     const security = await checkSecurityContext(currentSession);
@@ -76,7 +77,6 @@ const App: React.FC = () => {
   useEffect(() => {
     syncAuthState();
 
-    // Dinleyiciler: Giriş yapıldığı an tetiklenir
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'nexus_demo_session') syncAuthState();
     };
@@ -107,9 +107,14 @@ const App: React.FC = () => {
   if (!isInitialized) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-950">
-        <Loader2 className="animate-spin h-12 w-12 text-indigo-500 mb-4" />
-        <p className="text-indigo-500/40 font-mono text-[10px] tracking-[0.4em] animate-pulse">
-          INITIALIZING NEXUS...
+        <div className="relative">
+          <Loader2 className="animate-spin h-16 w-16 text-indigo-500/20" strokeWidth={1} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-4 w-4 bg-indigo-500 rounded-full animate-pulse"></div>
+          </div>
+        </div>
+        <p className="mt-6 text-indigo-500/40 font-mono text-[9px] tracking-[0.6em] uppercase animate-pulse">
+          Establishing Uplink...
         </p>
       </div>
     );
