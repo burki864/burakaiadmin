@@ -1,28 +1,18 @@
-
 import React, { useEffect, useState, useCallback } from 'react';
 import { Search, Ban, UserX, UserCheck, Loader2, ShieldAlert, History, Trash2, Shield, Settings, LogIn, Unlock, RefreshCcw, AlertTriangle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { UserProfile, AdminLog } from '../types.ts';
 
 const MOCK_USERS: UserProfile[] = [
-  { id: '1', username: 'kaito_admin', email: 'kaito@nexus.io', banned: false, ban_until: null, created_at: new Date().toISOString(), status: 'online' },
-  { id: '2', username: 'shadow_user', email: 'shadow@dark.net', banned: true, ban_until: '2026-01-01T00:00:00Z', created_at: new Date(Date.now() - 86400000).toISOString(), status: 'offline' },
-  { id: '3', username: 'beta_tester', email: 'tester@google.com', banned: false, ban_until: null, created_at: new Date(Date.now() - 259200000).toISOString(), status: 'offline' },
-  { id: '4', username: 'nova_prime', email: 'nova@space.io', banned: false, ban_until: null, created_at: new Date(Date.now() - 345600000).toISOString(), status: 'online' },
-  { id: '5', username: 'admin_test', email: 'test@nexus.io', banned: false, ban_until: null, created_at: new Date(Date.now() - 518400000).toISOString(), status: 'offline' },
-  { id: '6', username: 'zero_cool', email: 'zero@hack.net', banned: false, ban_until: null, created_at: new Date(Date.now() - 604800000).toISOString(), status: 'online' },
-  { id: '7', username: 'acid_burn', email: 'acid@hack.net', banned: false, ban_until: null, created_at: new Date(Date.now() - 691200000).toISOString(), status: 'online' },
-  { id: '8', username: 'lord_nikon', email: 'nikon@hack.net', banned: false, ban_until: null, created_at: new Date(Date.now() - 777600000).toISOString(), status: 'offline' },
+  { id: '1', username: 'kaito_admin', email: 'kaito@nexus.io', banned: false, banned_until: null, created_at: new Date().toISOString(), status: 'online' },
+  { id: '2', username: 'shadow_user', email: 'shadow@dark.net', banned: true, banned_until: '2026-01-01T00:00:00Z', created_at: new Date(Date.now() - 86400000).toISOString(), status: 'offline' },
 ];
 
 const LogIcon: React.FC<{ type: string }> = ({ type }) => {
   switch (type) {
     case 'BAN': return <Ban size={14} className="text-rose-500" />;
     case 'UNBAN': return <Unlock size={14} className="text-emerald-500" />;
-    case 'DELETE_MESSAGE': return <Trash2 size={14} className="text-amber-500" />;
     case 'DELETE_USER': return <Trash2 size={14} className="text-rose-600" />;
-    case 'UPDATE_SETTINGS': return <Settings size={14} className="text-indigo-500" />;
-    case 'LOGIN': return <LogIn size={14} className="text-indigo-500" />;
     default: return <Shield size={14} className="text-slate-400" />;
   }
 };
@@ -41,20 +31,34 @@ const UsersPage: React.FC = () => {
     setLoading(true);
     if (isSupabaseConfigured) {
       try {
+        // 1. Kullanıcıları Getir
         let uQuery = supabase.from('profiles').select('*').order('created_at', { ascending: false });
         if (filter === 'active') uQuery = uQuery.eq('banned', false);
         if (filter === 'banned') uQuery = uQuery.eq('banned', true);
-        const { data: uData } = await uQuery;
+        
+        const { data: uData, error: uError } = await uQuery;
+        if (uError) throw uError;
         if (uData) setUsers(uData as UserProfile[]);
 
-        const { data: lData } = await supabase
+        // 2. Logları Getir (Sütun isimleri güncellendi: action, target_id)
+        const { data: lData, error: lError } = await supabase
           .from('admin_logs')
-          .select('*, target_user:profiles(*)')
+          .select('*') 
           .order('created_at', { ascending: false })
           .limit(20);
-        if (lData) setLogs(lData as AdminLog[]);
+        
+        if (lError) console.warn("Log Tablosu Erişimi:", lError.message);
+        if (lData) {
+            // Log ikonları için action_type eşlemesi yapıyoruz
+            const formattedLogs = lData.map(log => ({
+                ...log,
+                action_type: log.action || 'INFO', // DB'deki 'action' sütununu koda uyduruyoruz
+                target_user_id: log.target_id
+            }));
+            setLogs(formattedLogs as AdminLog[]);
+        }
       } catch (e) {
-        console.error("Database Connection Failure:", e);
+        console.error("Fetch Data Error:", e);
       }
     } else {
       const stored = localStorage.getItem('nexus_demo_users');
@@ -62,7 +66,6 @@ const UsersPage: React.FC = () => {
       if (filter === 'active') data = data.filter((u: any) => !u.banned);
       if (filter === 'banned') data = data.filter((u: any) => u.banned);
       setUsers(data);
-      setLogs([]); 
     }
     setLoading(false);
   }, [filter]);
@@ -70,9 +73,8 @@ const UsersPage: React.FC = () => {
   useEffect(() => {
     fetchData();
     if (isSupabaseConfigured) {
-      const channel = supabase.channel('dashboard-realtime')
+      const channel = supabase.channel('db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'admin_logs' }, () => fetchData())
         .subscribe();
       return () => { supabase.removeChannel(channel); };
     }
@@ -82,14 +84,23 @@ const UsersPage: React.FC = () => {
     setIsActionLoading(true);
     if (isSupabaseConfigured) {
       try {
-        await supabase.from('profiles').update({ banned: isBan, ban_until: isBan ? new Date(Date.now() + 86400000 * 365).toISOString() : null }).eq('id', user.id);
+        // DÜZELTME: banned_until
+        await supabase.from('profiles')
+            .update({ 
+                banned: isBan, 
+                banned_until: isBan ? new Date(Date.now() + 86400000 * 365).toISOString() : null 
+            })
+            .eq('id', user.id);
+
+        // DÜZELTME: action ve target_id
         await supabase.from('admin_logs').insert({ 
-          action_type: isBan ? 'BAN' : 'UNBAN', 
-          target_user_id: user.id, 
-          details: `${isBan ? 'Terminated' : 'Reinstated'} access for ${user.username}` 
+          action: isBan ? 'BAN' : 'UNBAN', 
+          target_id: user.id, 
+          details: `${isBan ? 'Banned' : 'Unbanned'} user: ${user.username}` 
         });
+        
         fetchData();
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Action Error:", e); }
     } else {
       const updated = users.map(u => u.id === user.id ? { ...u, banned: isBan } : u);
       setUsers(updated);
@@ -103,18 +114,14 @@ const UsersPage: React.FC = () => {
     setIsActionLoading(true);
     if (isSupabaseConfigured) {
       try {
-        const { error } = await supabase.from('profiles').delete().eq('id', user.id);
-        if (error) throw error;
-        
+        await supabase.from('profiles').delete().eq('id', user.id);
         await supabase.from('admin_logs').insert({ 
-          action_type: 'DELETE_USER', 
-          target_user_id: user.id, 
-          details: `Permanently purged identity record for ${user.username}` 
+          action: 'DELETE_USER', 
+          target_id: user.id, 
+          details: `Deleted user: ${user.username}` 
         });
         fetchData();
-      } catch (e) { 
-        console.error("Deletion Error:", e);
-      }
+      } catch (e) { console.error("Delete Error:", e); }
     } else {
       const updated = users.filter(u => u.id !== user.id);
       setUsers(updated);
@@ -131,32 +138,27 @@ const UsersPage: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
-      {/* Primary Control Column - Grow naturally long */}
       <div className="xl:col-span-4 flex flex-col space-y-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-2">
           <div>
             <h2 className="text-5xl font-black tracking-tighter mb-2 uppercase text-white">User Command</h2>
-            <p className="text-slate-500 font-bold text-sm uppercase tracking-[0.3em]">Global Database Management & Real-time Enforcement</p>
+            <p className="text-slate-500 font-bold text-sm uppercase tracking-[0.3em]">Global Database Management</p>
           </div>
           <div className="flex items-center gap-4">
-            <button 
-              onClick={fetchData} 
-              className="p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 transition-all text-slate-400 hover:text-indigo-400 active:scale-95"
-              title="Refresh Data"
-            >
+            <button onClick={fetchData} className="p-4 bg-slate-900 border border-slate-800 rounded-2xl hover:bg-slate-800 transition-all text-slate-400">
               <RefreshCcw size={20} className={loading ? 'animate-spin' : ''} />
             </button>
             <div className="relative">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600 w-5 h-5" />
               <input 
                 type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Locate Identity Signal..." 
-                className="bg-slate-950 border border-slate-800 rounded-3xl pl-14 pr-8 py-4 text-base focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 w-80 transition-all shadow-2xl"
+                placeholder="Locate Identity..." 
+                className="bg-slate-950 border border-slate-800 rounded-3xl pl-14 pr-8 py-4 text-base text-white focus:border-indigo-500 outline-none w-80 transition-all"
               />
             </div>
             <select 
               value={filter} onChange={(e: any) => setFilter(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-3xl px-8 py-4 text-xs font-black uppercase tracking-widest outline-none cursor-pointer text-indigo-400 focus:border-indigo-500 transition-all hover:bg-slate-900"
+              className="bg-slate-950 border border-slate-800 rounded-3xl px-8 py-4 text-xs font-black uppercase text-indigo-400 outline-none cursor-pointer"
             >
               <option value="all">ALL ENTITIES</option>
               <option value="active">AUTHORIZED</option>
@@ -165,201 +167,126 @@ const UsersPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-slate-900/40 border border-slate-800 rounded-[4rem] overflow-hidden backdrop-blur-3xl flex flex-col shadow-2xl min-h-[600px]">
-          <div className="flex-1">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
-                <tr className="text-slate-500 text-[11px] font-black uppercase tracking-[0.3em] border-b border-slate-800/80">
-                  <th className="px-12 py-8">Signal / Identity</th>
-                  <th className="px-12 py-8">Connectivity</th>
-                  <th className="px-12 py-8">Clearance</th>
-                  <th className="px-12 py-8 text-right">Protocol</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/40">
-                {loading && users.length === 0 ? (
-                  Array.from({ length: 10 }).map((_, i) => (
-                    <tr key={i} className="animate-pulse">
-                      <td colSpan={4} className="px-12 py-10"><div className="h-12 bg-slate-800/40 rounded-3xl w-full"></div></td>
-                    </tr>
-                  ))
-                ) : filteredUsers.length === 0 ? (
-                  <tr><td colSpan={4} className="px-12 py-60 text-center text-slate-700 font-black uppercase tracking-[0.5em] italic opacity-50">Empty Database Segment</td></tr>
-                ) : (
-                  filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-indigo-600/5 transition-all group">
-                      <td className="px-12 py-8">
-                        <div className="flex items-center gap-6">
-                          <img 
-                            src={`https://api.dicebear.com/7.x/bottts/svg?seed=${user.id}`} 
-                            className="w-16 h-16 rounded-[1.5rem] bg-slate-950 border-2 border-slate-800 group-hover:border-indigo-500/50 transition-all p-1.5 shadow-xl group-hover:scale-105" 
-                          />
-                          <div>
-                            <p className="text-lg font-bold text-slate-100 group-hover:text-white transition-colors">{user.username}</p>
-                            <p className="text-xs text-slate-500 font-mono tracking-tighter opacity-60">{user.id}</p>
-                          </div>
+        <div className="bg-slate-900/40 border border-slate-800 rounded-[3rem] overflow-hidden backdrop-blur-3xl shadow-2xl min-h-[500px]">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-900/95 sticky top-0 z-10">
+              <tr className="text-slate-500 text-[11px] font-black uppercase tracking-[0.3em] border-b border-slate-800/80">
+                <th className="px-12 py-8">Signal / Identity</th>
+                <th className="px-12 py-8">Connectivity</th>
+                <th className="px-12 py-8">Clearance</th>
+                <th className="px-12 py-8 text-right">Protocol</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/40">
+              {loading && users.length === 0 ? (
+                <tr><td colSpan={4} className="px-12 py-20 text-center text-slate-500">Loading Cluster...</td></tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr><td colSpan={4} className="px-12 py-20 text-center text-slate-700 font-black uppercase tracking-[0.5em]">No Records Found</td></tr>
+              ) : (
+                filteredUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-indigo-600/5 transition-all group">
+                    <td className="px-12 py-8">
+                      <div className="flex items-center gap-6">
+                        <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${user.id}`} className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 p-1" />
+                        <div>
+                          <p className="text-lg font-bold text-slate-100">{user.username}</p>
+                          <p className="text-xs text-slate-500 font-mono">{user.email}</p>
                         </div>
-                      </td>
-                      <td className="px-12 py-8">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-3 h-3 rounded-full ${user.status === 'online' ? 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.6)]' : 'bg-slate-700'}`}></div>
-                          <span className={`text-xs font-black uppercase tracking-widest ${user.status === 'online' ? 'text-emerald-500' : 'text-slate-600'}`}>{user.status || 'Offline'}</span>
-                        </div>
-                      </td>
-                      <td className="px-12 py-8">
+                      </div>
+                    </td>
+                    <td className="px-12 py-8">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${user.status === 'online' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-slate-700'}`}></div>
+                        <span className={`text-[10px] font-black uppercase ${user.status === 'online' ? 'text-emerald-500' : 'text-slate-600'}`}>{user.status || 'Offline'}</span>
+                      </div>
+                    </td>
+                    <td className="px-12 py-8">
+                      {user.banned ? (
+                        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-500/10 text-rose-500 text-[10px] font-black border border-rose-500/20">
+                          <ShieldAlert size={12} /> BANNED
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 text-[10px] font-black border border-emerald-500/20">
+                          <UserCheck size={12} /> ACTIVE
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-12 py-8 text-right">
+                      <div className="flex justify-end gap-3">
                         {user.banned ? (
-                          <span className="inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-rose-500/10 text-rose-500 text-[10px] font-black uppercase tracking-widest border border-rose-500/20 shadow-inner">
-                            <ShieldAlert size={14} />
-                            TERMINATED
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-widest border border-emerald-500/20 shadow-inner">
-                            <UserCheck size={14} />
-                            AUTHORIZED
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-12 py-8 text-right">
-                        <div className="flex justify-end items-center gap-3">
-                          {user.banned ? (
-                            <button 
-                              onClick={() => handleAction(user, false)} 
-                              className="inline-flex items-center gap-3 px-6 py-3.5 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border border-emerald-500/20 shadow-xl active:scale-95"
-                            >
-                              <Unlock size={16} />
-                              Reinstate
-                            </button>
-                          ) : (
-                            <button 
-                              onClick={() => setShowBanModal(user)} 
-                              className="inline-flex items-center gap-3 px-6 py-3.5 bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border border-rose-500/20 shadow-xl active:scale-95"
-                            >
-                              <UserX size={16} />
-                              Terminate
-                            </button>
-                          )}
-                          <button 
-                            onClick={() => setShowDeleteModal(user)}
-                            className="p-3.5 bg-slate-800/50 hover:bg-rose-600 text-slate-400 hover:text-white rounded-[1.25rem] transition-all border border-slate-700/50 hover:border-rose-500 active:scale-95 group/del"
-                            title="Permanent Purge"
-                          >
-                            <Trash2 size={16} className="group-hover/del:scale-110 transition-transform" />
+                          <button onClick={() => handleAction(user, false)} className="px-4 py-2 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all border border-emerald-500/20">
+                            Unlock
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                        ) : (
+                          <button onClick={() => setShowBanModal(user)} className="px-4 py-2 bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white rounded-xl text-[10px] font-black uppercase transition-all border border-rose-500/20">
+                            Ban
+                          </button>
+                        )}
+                        <button onClick={() => setShowDeleteModal(user)} className="p-2 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-xl transition-all border border-slate-700">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Audit Stream Column - Sticky sidebar for long scroll */}
-      <div className="xl:col-span-1 flex flex-col space-y-8 h-fit sticky top-10">
-        <div className="flex items-center gap-4 px-2">
-          <History className="text-indigo-500" size={28} />
-          <h3 className="text-xl font-black tracking-tighter uppercase tracking-[0.2em] text-white">Audits</h3>
+      {/* Audit Stream */}
+      <div className="xl:col-span-1 flex flex-col space-y-6 sticky top-10 h-fit">
+        <div className="flex items-center gap-3 px-2">
+          <History className="text-indigo-500" size={24} />
+          <h3 className="text-lg font-black uppercase tracking-widest text-white">Audit Log</h3>
         </div>
-        
-        <div className="bg-slate-900/40 border border-slate-800 rounded-[4rem] p-10 flex flex-col backdrop-blur-3xl shadow-2xl max-h-[80vh] overflow-hidden">
-          <div className="flex-1 overflow-y-auto space-y-8 custom-scrollbar pr-2">
-            {logs.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-20 h-full min-h-[300px]">
-                <Shield size={60} className="mb-6 text-slate-700" />
-                <p className="text-[10px] font-black uppercase tracking-[0.3em]">No Events</p>
-              </div>
-            ) : (
-              logs.map((log) => (
-                <div key={log.id} className="p-6 bg-slate-950/40 rounded-[2.5rem] border border-slate-800/50 hover:border-indigo-500/30 transition-all group animate-in slide-in-from-right-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <LogIcon type={log.action_type} />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">{log.action_type.replace('_', ' ')}</span>
-                    </div>
-                    <span className="text-[9px] text-slate-600 font-mono font-bold">{new Date(log.created_at).toLocaleTimeString()}</span>
+        <div className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+          {logs.length === 0 ? (
+            <p className="text-[10px] text-slate-600 text-center py-10 uppercase font-black">No recent events</p>
+          ) : (
+            logs.map((log) => (
+              <div key={log.id} className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <LogIcon type={log.action_type} />
+                    <span className="text-[9px] font-black text-indigo-400 uppercase">{log.action_type}</span>
                   </div>
-                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-5">{log.details}</p>
-                  {log.target_user && (
-                     <div className="flex items-center gap-4 mt-4 pt-5 border-t border-slate-800/50">
-                       <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${log.target_user_id}`} className="w-8 h-8 rounded-xl bg-slate-900 shadow-inner" />
-                       <span className="text-xs font-black text-slate-500 uppercase tracking-tighter">@{log.target_user.username}</span>
-                     </div>
-                  )}
+                  <span className="text-[8px] text-slate-600 font-mono">{new Date(log.created_at).toLocaleTimeString()}</span>
                 </div>
-              ))
-            )}
-          </div>
-          <button className="w-full mt-8 py-5 text-xs font-black uppercase tracking-[0.3em] text-slate-600 hover:text-indigo-400 transition-all bg-slate-950/50 rounded-3xl border border-dashed border-slate-800 hover:border-indigo-500/50 shrink-0 shadow-lg">
-            Audit Archive
-          </button>
+                <p className="text-[11px] text-slate-400 leading-tight">{log.details}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Ban Confirmation Modal */}
+      {/* Modals (Ban & Delete) */}
       {showBanModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
-          <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl" onClick={() => setShowBanModal(null)}></div>
-          <div className="relative bg-slate-900 border border-slate-800 rounded-[5rem] w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 shadow-[0_0_150px_rgba(0,0,0,0.9)]">
-            <div className="p-20 text-center">
-              <div className="w-32 h-32 bg-rose-600/10 text-rose-500 rounded-[3rem] flex items-center justify-center mx-auto mb-12 border border-rose-500/20 shadow-2xl shadow-rose-500/10">
-                <ShieldAlert size={64} />
-              </div>
-              <h3 className="text-4xl font-black tracking-tighter mb-6 uppercase text-white">Execute Termination?</h3>
-              <p className="text-slate-500 font-bold text-base mb-16 leading-relaxed max-w-md mx-auto">
-                Authorized protocol for restricting all database privileges for <strong className="text-white">@{showBanModal.username}</strong>. Action will be permanent and logged.
-              </p>
-              
-              <div className="flex gap-6">
-                <button 
-                  onClick={() => setShowBanModal(null)} 
-                  className="flex-1 py-8 bg-slate-800 hover:bg-slate-700 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-slate-400 transition-all active:scale-95"
-                >
-                  Abort
-                </button>
-                <button 
-                  onClick={() => handleAction(showBanModal, true)} 
-                  disabled={isActionLoading}
-                  className="flex-1 py-8 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-white shadow-2xl shadow-rose-600/40 transition-all flex items-center justify-center gap-3 active:scale-95"
-                >
-                  {isActionLoading ? <Loader2 className="animate-spin w-6 h-6" /> : 'Confirm Protocol'}
-                </button>
-              </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-12 max-w-md w-full text-center shadow-2xl">
+            <div className="w-20 h-20 bg-rose-500/20 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6"><ShieldAlert size={40} /></div>
+            <h3 className="text-2xl font-black text-white mb-4 uppercase">Confirm Ban?</h3>
+            <p className="text-slate-400 text-sm mb-8">@{showBanModal.username} will be restricted from the system.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setShowBanModal(null)} className="flex-1 py-4 bg-slate-800 rounded-2xl text-xs font-black text-slate-400 uppercase">Abort</button>
+              <button onClick={() => handleAction(showBanModal, true)} disabled={isActionLoading} className="flex-1 py-4 bg-rose-600 rounded-2xl text-xs font-black text-white uppercase shadow-lg shadow-rose-600/20">
+                {isActionLoading ? 'Wait...' : 'Execute'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
-          <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-3xl" onClick={() => setShowDeleteModal(null)}></div>
-          <div className="relative bg-slate-950 border border-rose-500/30 rounded-[5rem] w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 shadow-[0_0_180px_rgba(244,63,94,0.15)]">
-            <div className="p-20 text-center">
-              <div className="w-32 h-32 bg-rose-600/20 text-rose-600 rounded-[3.5rem] flex items-center justify-center mx-auto mb-12 border-2 border-rose-500/30 shadow-2xl shadow-rose-600/20 animate-pulse">
-                <AlertTriangle size={64} />
-              </div>
-              <h3 className="text-4xl font-black tracking-tighter mb-6 uppercase text-white">Purge Identity Record?</h3>
-              <p className="text-slate-400 font-bold text-base mb-16 leading-relaxed max-w-md mx-auto">
-                CRITICAL ACTION: This will permanently delete all metadata and record logs for <strong className="text-rose-500">@{showDeleteModal.username}</strong> from the primary cluster. <br/><span className="text-rose-600/80 italic">THIS ACTION CANNOT BE UNDONE.</span>
-              </p>
-              
-              <div className="flex gap-6">
-                <button 
-                  onClick={() => setShowDeleteModal(null)} 
-                  className="flex-1 py-8 bg-slate-900 hover:bg-slate-800 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-slate-500 transition-all active:scale-95 border border-slate-800"
-                >
-                  Cancel Purge
-                </button>
-                <button 
-                  onClick={() => handleDeleteUser(showDeleteModal)} 
-                  disabled={isActionLoading}
-                  className="flex-1 py-8 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-white shadow-2xl shadow-rose-900/40 transition-all flex items-center justify-center gap-3 active:scale-95 border border-rose-500/20"
-                >
-                  {isActionLoading ? <Loader2 className="animate-spin w-6 h-6" /> : 'Execute Purge'}
-                </button>
-              </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-[3rem] p-12 max-w-md w-full text-center shadow-2xl">
+            <div className="w-20 h-20 bg-rose-600/20 text-rose-600 rounded-3xl flex items-center justify-center mx-auto mb-6 animate-pulse"><AlertTriangle size={40} /></div>
+            <h3 className="text-2xl font-black text-white mb-4 uppercase">Purge Account?</h3>
+            <p className="text-slate-400 text-sm mb-8">This action is permanent for @{showDeleteModal.username}.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setShowDeleteModal(null)} className="flex-1 py-4 bg-slate-800 rounded-2xl text-xs font-black text-slate-400 uppercase">Cancel</button>
+              <button onClick={() => handleDeleteUser(showDeleteModal)} disabled={isActionLoading} className="flex-1 py-4 bg-rose-700 rounded-2xl text-xs font-black text-white uppercase">Confirm Purge</button>
             </div>
           </div>
         </div>

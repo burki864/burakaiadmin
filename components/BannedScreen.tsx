@@ -5,7 +5,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 
 interface BannedScreenProps {
   details?: {
-    ban_until?: string | null;
+    banned_until?: string | null;
     username?: string;
   };
   lang?: 'tr' | 'en';
@@ -105,7 +105,7 @@ const BannedScreen: React.FC<BannedScreenProps> = ({ details, lang = 'tr' }) => 
                 <span className="text-[10px] font-black uppercase tracking-widest">{t.untilTitle}</span>
               </div>
               <p className="text-xs font-bold text-rose-500 leading-relaxed uppercase">
-                {formatUntil(details?.ban_until)}
+                {formatUntil(details?.banned_until)}
               </p>
             </div>
           </div>
