@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, ArrowRight, Loader2, Info } from 'lucide-react';
 
@@ -33,17 +32,23 @@ const LoginPage: React.FC = () => {
           expires_at: Date.now() + 3600000 
         };
 
-        // 1. Commit to Local Storage
+        // 1. Session'ı LocalStorage'a yaz
         localStorage.setItem('nexus_demo_session', JSON.stringify(mockSession));
         
-        // 2. TRIGGER AUTH BRIDGE (CRITICAL FIX)
-        // This notifies App.tsx to re-run its sync logic immediately
+        // 2. KRİTİK: App.tsx'i uyandırmak için özel event fırlat
         window.dispatchEvent(new Event('nexus-auth-refresh'));
+        window.dispatchEvent(new Event('storage')); // Yedek tetikleyici
 
         // 3. UI Gecikmesi (Hissiyat için)
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 600));
         
-        // Navigation is handled automatically by App.tsx observing the state change
+        // 4. SON ÇARE: Eğer App.tsx hala yönlendirme yapmadıysa zorla yönlendir
+        // HashRouter kullandığımız için hash üzerinden gitmek en garantisidir.
+        window.location.hash = '#/dashboard/users';
+        
+        // Spinner'da takılmayı önlemek için sayfayı tamamen tazele
+        window.location.reload();
+
       } else {
         throw new Error('Geçersiz Güvenlik Anahtarı. Yetkisiz Erişim Girişimi Loglandı.');
       }
@@ -57,11 +62,11 @@ const LoginPage: React.FC = () => {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans selection:bg-indigo-500/30">
       <div className="w-full max-w-md">
         <div className="text-center mb-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="inline-flex items-center justify-center w-24 h-24 bg-indigo-600 rounded-[2.5rem] mb-6 shadow-2xl shadow-indigo-500/30 transform transition-all hover:scale-105 active:scale-95 cursor-none">
+          <div className="inline-flex items-center justify-center w-24 h-24 bg-indigo-600 rounded-[2.5rem] mb-6 shadow-2xl shadow-indigo-500/30 transform transition-all hover:scale-105 active:scale-95">
             <ShieldCheck className="w-12 h-12 text-white" />
           </div>
-          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">Nexus Command</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em]">Biometric Auth Required</p>
+          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">Yakup Ustam Nasılsın</h1>
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em]">gir içeri</p>
         </div>
 
         <div className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 p-10 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-500">
