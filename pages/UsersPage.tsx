@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Search, Ban, UserX, UserCheck, Loader2, ShieldAlert, History, Trash2, Shield, Settings, LogIn, Unlock, RefreshCcw } from 'lucide-react';
+import { Search, Ban, UserX, UserCheck, Loader2, ShieldAlert, History, Trash2, Shield, Settings, LogIn, Unlock, RefreshCcw, AlertTriangle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { UserProfile, AdminLog } from '../types.ts';
 
@@ -20,6 +20,7 @@ const LogIcon: React.FC<{ type: string }> = ({ type }) => {
     case 'BAN': return <Ban size={14} className="text-rose-500" />;
     case 'UNBAN': return <Unlock size={14} className="text-emerald-500" />;
     case 'DELETE_MESSAGE': return <Trash2 size={14} className="text-amber-500" />;
+    case 'DELETE_USER': return <Trash2 size={14} className="text-rose-600" />;
     case 'UPDATE_SETTINGS': return <Settings size={14} className="text-indigo-500" />;
     case 'LOGIN': return <LogIn size={14} className="text-indigo-500" />;
     default: return <Shield size={14} className="text-slate-400" />;
@@ -33,6 +34,7 @@ const UsersPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'banned'>('all');
   const [showBanModal, setShowBanModal] = useState<UserProfile | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState<UserProfile | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -94,6 +96,31 @@ const UsersPage: React.FC = () => {
       localStorage.setItem('nexus_demo_users', JSON.stringify(updated));
     }
     setShowBanModal(null);
+    setIsActionLoading(false);
+  };
+
+  const handleDeleteUser = async (user: UserProfile) => {
+    setIsActionLoading(true);
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('profiles').delete().eq('id', user.id);
+        if (error) throw error;
+        
+        await supabase.from('admin_logs').insert({ 
+          action_type: 'DELETE_USER', 
+          target_user_id: user.id, 
+          details: `Permanently purged identity record for ${user.username}` 
+        });
+        fetchData();
+      } catch (e) { 
+        console.error("Deletion Error:", e);
+      }
+    } else {
+      const updated = users.filter(u => u.id !== user.id);
+      setUsers(updated);
+      localStorage.setItem('nexus_demo_users', JSON.stringify(updated));
+    }
+    setShowDeleteModal(null);
     setIsActionLoading(false);
   };
 
@@ -193,23 +220,32 @@ const UsersPage: React.FC = () => {
                         )}
                       </td>
                       <td className="px-12 py-8 text-right">
-                        {user.banned ? (
+                        <div className="flex justify-end items-center gap-3">
+                          {user.banned ? (
+                            <button 
+                              onClick={() => handleAction(user, false)} 
+                              className="inline-flex items-center gap-3 px-6 py-3.5 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border border-emerald-500/20 shadow-xl active:scale-95"
+                            >
+                              <Unlock size={16} />
+                              Reinstate
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => setShowBanModal(user)} 
+                              className="inline-flex items-center gap-3 px-6 py-3.5 bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white rounded-[1.25rem] text-[10px] font-black uppercase tracking-widest transition-all border border-rose-500/20 shadow-xl active:scale-95"
+                            >
+                              <UserX size={16} />
+                              Terminate
+                            </button>
+                          )}
                           <button 
-                            onClick={() => handleAction(user, false)} 
-                            className="inline-flex items-center gap-3 px-8 py-3.5 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all border border-emerald-500/20 shadow-2xl active:scale-95"
+                            onClick={() => setShowDeleteModal(user)}
+                            className="p-3.5 bg-slate-800/50 hover:bg-rose-600 text-slate-400 hover:text-white rounded-[1.25rem] transition-all border border-slate-700/50 hover:border-rose-500 active:scale-95 group/del"
+                            title="Permanent Purge"
                           >
-                            <Unlock size={18} />
-                            Reinstate
+                            <Trash2 size={16} className="group-hover/del:scale-110 transition-transform" />
                           </button>
-                        ) : (
-                          <button 
-                            onClick={() => setShowBanModal(user)} 
-                            className="inline-flex items-center gap-3 px-8 py-3.5 bg-rose-600/10 hover:bg-rose-600 text-rose-500 hover:text-white rounded-[1.5rem] text-xs font-black uppercase tracking-widest transition-all border border-rose-500/20 shadow-2xl active:scale-95"
-                          >
-                            <UserX size={18} />
-                            Terminate
-                          </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -240,7 +276,7 @@ const UsersPage: React.FC = () => {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <LogIcon type={log.action_type} />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">{log.action_type}</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">{log.action_type.replace('_', ' ')}</span>
                     </div>
                     <span className="text-[9px] text-slate-600 font-mono font-bold">{new Date(log.created_at).toLocaleTimeString()}</span>
                   </div>
@@ -261,7 +297,7 @@ const UsersPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Confirmation Modal */}
+      {/* Ban Confirmation Modal */}
       {showBanModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
           <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl" onClick={() => setShowBanModal(null)}></div>
@@ -288,6 +324,40 @@ const UsersPage: React.FC = () => {
                   className="flex-1 py-8 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-white shadow-2xl shadow-rose-600/40 transition-all flex items-center justify-center gap-3 active:scale-95"
                 >
                   {isActionLoading ? <Loader2 className="animate-spin w-6 h-6" /> : 'Confirm Protocol'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
+          <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-3xl" onClick={() => setShowDeleteModal(null)}></div>
+          <div className="relative bg-slate-950 border border-rose-500/30 rounded-[5rem] w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-500 shadow-[0_0_180px_rgba(244,63,94,0.15)]">
+            <div className="p-20 text-center">
+              <div className="w-32 h-32 bg-rose-600/20 text-rose-600 rounded-[3.5rem] flex items-center justify-center mx-auto mb-12 border-2 border-rose-500/30 shadow-2xl shadow-rose-600/20 animate-pulse">
+                <AlertTriangle size={64} />
+              </div>
+              <h3 className="text-4xl font-black tracking-tighter mb-6 uppercase text-white">Purge Identity Record?</h3>
+              <p className="text-slate-400 font-bold text-base mb-16 leading-relaxed max-w-md mx-auto">
+                CRITICAL ACTION: This will permanently delete all metadata and record logs for <strong className="text-rose-500">@{showDeleteModal.username}</strong> from the primary cluster. <br/><span className="text-rose-600/80 italic">THIS ACTION CANNOT BE UNDONE.</span>
+              </p>
+              
+              <div className="flex gap-6">
+                <button 
+                  onClick={() => setShowDeleteModal(null)} 
+                  className="flex-1 py-8 bg-slate-900 hover:bg-slate-800 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-slate-500 transition-all active:scale-95 border border-slate-800"
+                >
+                  Cancel Purge
+                </button>
+                <button 
+                  onClick={() => handleDeleteUser(showDeleteModal)} 
+                  disabled={isActionLoading}
+                  className="flex-1 py-8 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 rounded-[2rem] text-xs font-black uppercase tracking-[0.3em] text-white shadow-2xl shadow-rose-900/40 transition-all flex items-center justify-center gap-3 active:scale-95 border border-rose-500/20"
+                >
+                  {isActionLoading ? <Loader2 className="animate-spin w-6 h-6" /> : 'Execute Purge'}
                 </button>
               </div>
             </div>

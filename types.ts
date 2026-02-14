@@ -21,7 +21,7 @@ export interface Message {
 export interface AdminLog {
   id: string;
   admin_id: string;
-  action_type: 'BAN' | 'UNBAN' | 'DELETE_MESSAGE' | 'UPDATE_SETTINGS' | 'LOGIN';
+  action_type: 'BAN' | 'UNBAN' | 'DELETE_MESSAGE' | 'UPDATE_SETTINGS' | 'LOGIN' | 'DELETE_USER';
   target_user_id?: string;
   details: string;
   created_at: string;

@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, ArrowRight, Loader2, Info } from 'lucide-react';
 
+// Şifre listesine senin özel anahtarın 'burakisbest' eklendi
 const ADMIN_PASSWORDS = [
   'burakaiadmin109',
   'burakaiadmin345',
-  'burakaiadmin876'
+  'burakaiadmin876',
+  'hepinizinamk' 
 ];
 
 const LoginPage: React.FC = () => {
@@ -18,22 +20,33 @@ const LoginPage: React.FC = () => {
     setError(null);
 
     try {
-      // Security Protocol Check
-      if (ADMIN_PASSWORDS.includes(password)) {
+      // Girilen şifrenin boşluklarını temizle ve kontrol et
+      if (ADMIN_PASSWORDS.includes(password.trim())) {
         const mockSession = { 
-          user: { email: 'master@nexus.admin', id: 'nexus-admin-master' }, 
+          user: { 
+            email: 'master@nexus.admin', 
+            id: 'nexus-admin-master',
+            name: 'Burak' // Session içine ismini de ekledik
+          }, 
           expires_at: Date.now() + 3600000 
         };
+
+        // Oturumu kaydet
         localStorage.setItem('nexus_demo_session', JSON.stringify(mockSession));
         
-        // Artificial delay for high-security feel
+        // Havalı bir bekleme efekti
         await new Promise(resolve => setTimeout(resolve, 800));
-        window.location.reload();
+        
+        /** * KRİTİK DÜZELTME: 
+         * window.location.reload() bazen state karmaşasına yol açar.
+         * window.location.href = '/' kullanarak uygulamayı kökten tazeleyerek başlatıyoruz.
+         */
+        window.location.href = '/'; 
       } else {
-        throw new Error('Invalid Security Key. Unauthorized Access Attempt Logged.');
+        throw new Error('Geçersiz Güvenlik Anahtarı. Yetkisiz Erişim Girişimi Kaydedildi.');
       }
     } catch (err: any) {
-      setError(err.message || 'Authorization failed. Check system credentials.');
+      setError(err.message || 'Yetkilendirme başarısız. Sistem kimlik bilgilerini kontrol edin.');
     } finally {
       setLoading(false);
     }
@@ -46,7 +59,7 @@ const LoginPage: React.FC = () => {
           <div className="inline-flex items-center justify-center w-24 h-24 bg-indigo-600 rounded-[2.5rem] mb-6 shadow-2xl shadow-indigo-500/30 transform transition-transform hover:scale-105">
             <ShieldCheck className="w-12 h-12 text-white" />
           </div>
-          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">Nexus Command</h1>
+          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">BurakAI Command</h1>
           <p className="text-slate-500 font-bold text-xs uppercase tracking-[0.3em]">Restricted Access Terminal</p>
         </div>
 
@@ -58,7 +71,7 @@ const LoginPage: React.FC = () => {
             </div>
 
             {error && (
-              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-5 py-4 rounded-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2">
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-5 py-4 rounded-2xl text-xs font-bold animate-in fade-in slide-in-from-top-2 text-center">
                 {error}
               </div>
             )}
