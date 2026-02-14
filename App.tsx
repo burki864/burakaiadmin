@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage.tsx';
@@ -20,7 +19,13 @@ const App: React.FC = () => {
 
   // --- CORE SECURITY ENGINE ---
   const checkSecurityContext = useCallback(async (currentSession: any) => {
+    // Eğer oturum yoksa güvenlik kontrolüne gerek yok
     if (!currentSession?.user) return { banned: false, details: null };
+    
+    // ÖZEL DURUM: Manuel Admin girişi (burakisbest vb.) ise sorgusuz kabul et
+    if (currentSession.user.id === 'nexus-admin-master') {
+      return { banned: false, details: { username: 'Burak', role: 'SuperAdmin' } };
+    }
     
     try {
       if (isSupabaseConfigured) {
@@ -34,27 +39,30 @@ const App: React.FC = () => {
           return { banned: !!profile.banned, details: profile };
         }
       }
-      
-      // Local/Demo Auth Logic (for 'burakisbest' etc)
-      const demoUsers = JSON.parse(localStorage.getItem('nexus_demo_users') || '[]');
-      const me = demoUsers.find((u: any) => u.email === currentSession.user.email);
-      return { banned: !!me?.banned, details: me || null };
+      return { banned: false, details: null };
     } catch (e) {
-      console.error("Security probe failed:", e);
       return { banned: false, details: null };
     }
   }, []);
 
-  // --- SYNC ENGINE ---
+  // --- SYNC ENGINE (Geliştirilmiş Öncelik Modu) ---
   const syncAuthState = useCallback(async () => {
     let currentSession = null;
 
-    if (isSupabaseConfigured) {
-      const { data: { session: sbSession } } = await supabase.auth.getSession();
-      currentSession = sbSession;
-    } else {
-      const rawLocal = localStorage.getItem('nexus_demo_session');
-      currentSession = rawLocal ? JSON.parse(rawLocal) : null;
+    // 1. Önce LocalStorage'daki manuel oturumu kontrol et (burakisbest için en garantisi)
+    const rawLocal = localStorage.getItem('nexus_demo_session');
+    
+    if (rawLocal) {
+      currentSession = JSON.parse(rawLocal);
+    } 
+    // 2. Eğer local yoksa ve Supabase varsa oradan çek
+    else if (isSupabaseConfigured) {
+      try {
+        const { data: { session: sbSession } } = await supabase.auth.getSession();
+        currentSession = sbSession;
+      } catch (e) {
+        console.warn("Supabase auth unreachable");
+      }
     }
 
     const security = await checkSecurityContext(currentSession);
@@ -66,15 +74,13 @@ const App: React.FC = () => {
   }, [checkSecurityContext]);
 
   useEffect(() => {
-    // Initial Boot
     syncAuthState();
 
-    // Listener 1: External Storage Changes (Cross-tab)
+    // Dinleyiciler: Giriş yapıldığı an tetiklenir
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'nexus_demo_session') syncAuthState();
     };
 
-    // Listener 2: Internal Auth Bridge (Same-tab instant transition)
     const handleInternalAuth = () => {
       syncAuthState();
     };
@@ -82,7 +88,6 @@ const App: React.FC = () => {
     window.addEventListener('storage', handleStorage);
     window.addEventListener('nexus-auth-refresh', handleInternalAuth);
 
-    // Listener 3: Supabase Realtime Auth
     let authSub: any = null;
     if (isSupabaseConfigured) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
@@ -102,14 +107,9 @@ const App: React.FC = () => {
   if (!isInitialized) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-950">
-        <div className="relative">
-          <Loader2 className="animate-spin h-16 w-16 text-indigo-500/20" strokeWidth={1} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-4 w-4 bg-indigo-500 rounded-full animate-pulse"></div>
-          </div>
-        </div>
-        <p className="mt-6 text-indigo-500/40 font-mono text-[9px] tracking-[0.6em] uppercase animate-pulse">
-          Establishing Uplink...
+        <Loader2 className="animate-spin h-12 w-12 text-indigo-500 mb-4" />
+        <p className="text-indigo-500/40 font-mono text-[10px] tracking-[0.4em] animate-pulse">
+          INITIALIZING NEXUS...
         </p>
       </div>
     );
