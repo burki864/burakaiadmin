@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -9,12 +10,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
-      // Shim process.env to prevent crashes in libraries that expect a Node-like environment
+      // Shim process.env to prevent crashes in libraries
       window.process = { env: { NODE_ENV: 'production' } };
       
-      // Global error handler to catch boot errors
+      // Global diagnostic logger
       window.onerror = function(msg, url, line, col, error) {
         console.error("Critical System Error: ", msg, error);
+        // If the app is blank for more than 5 seconds, this will help identify why
         return false;
       };
     </script>
@@ -25,6 +27,14 @@
             color: #f8fafc; /* Slate 50 */
             margin: 0;
             overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        #root {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
         }
         ::-webkit-scrollbar {
             width: 6px;

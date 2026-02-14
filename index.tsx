@@ -9,8 +9,5 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement as HTMLElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+// Removing StrictMode temporarily to ensure single-pass boot stability
+root.render(<App />);
