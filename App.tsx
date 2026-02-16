@@ -22,14 +22,17 @@ const App: React.FC = () => {
   const checkSecurityContext = useCallback(async (currentSession: any) => {
     if (!currentSession?.user) return { banned: false, details: null };
     
-    // ÖZEL DURUM: Manuel Admin girişi (burakisbest vb.) ise direkt geçiş ver
+    // Check master admin first (demo behavior)
     if (currentSession.user.id === 'nexus-admin-master') {
-      // Check if even the master is banned in demo storage
-      const stored = localStorage.getItem('nexus_demo_users');
-      if (stored) {
-         const users = JSON.parse(stored);
-         const me = users.find((u: any) => u.id === 'nexus-admin-master');
-         if (me?.banned) return { banned: true, details: me };
+      try {
+        const stored = localStorage.getItem('nexus_demo_users');
+        if (stored) {
+           const users = JSON.parse(stored);
+           const me = users.find((u: any) => u.id === 'nexus-admin-master');
+           if (me?.banned) return { banned: true, details: me };
+        }
+      } catch (e) {
+        console.warn("Failed to parse demo users", e);
       }
       return { banned: false, details: { username: 'Burak', role: 'SuperAdmin' } };
     }
@@ -48,9 +51,13 @@ const App: React.FC = () => {
       }
       
       // Local/Demo Auth Logic
-      const demoUsers = JSON.parse(localStorage.getItem('nexus_demo_users') || '[]');
-      const me = demoUsers.find((u: any) => u.id === currentSession.user.id || u.email === currentSession.user.email);
-      return { banned: !!me?.banned, details: me || null };
+      const stored = localStorage.getItem('nexus_demo_users');
+      if (stored) {
+        const demoUsers = JSON.parse(stored);
+        const me = demoUsers.find((u: any) => u.id === currentSession.user.id || u.email === currentSession.user.email);
+        return { banned: !!me?.banned, details: me || null };
+      }
+      return { banned: false, details: null };
     } catch (e) {
       console.error("Security probe failed:", e);
       return { banned: false, details: null };
@@ -59,24 +66,33 @@ const App: React.FC = () => {
 
   // --- SYNC ENGINE ---
   const syncAuthState = useCallback(async () => {
-    let currentSession = null;
+    try {
+      let currentSession = null;
+      const rawLocal = localStorage.getItem('nexus_demo_session');
+      
+      if (rawLocal) {
+        try {
+          currentSession = JSON.parse(rawLocal);
+        } catch (e) {
+          localStorage.removeItem('nexus_demo_session');
+        }
+      } 
+      
+      if (!currentSession && isSupabaseConfigured) {
+        const { data: { session: sbSession } } = await supabase.auth.getSession();
+        currentSession = sbSession;
+      }
 
-    const rawLocal = localStorage.getItem('nexus_demo_session');
-    
-    if (rawLocal) {
-      currentSession = JSON.parse(rawLocal);
-    } 
-    else if (isSupabaseConfigured) {
-      const { data: { session: sbSession } } = await supabase.auth.getSession();
-      currentSession = sbSession;
+      const security = await checkSecurityContext(currentSession);
+      
+      setSession(currentSession);
+      setIsBanned(security.banned);
+      setBanDetails(security.details);
+    } catch (error) {
+      console.error("Auth sync cycle failed:", error);
+    } finally {
+      setIsInitialized(true);
     }
-
-    const security = await checkSecurityContext(currentSession);
-    
-    setSession(currentSession);
-    setIsBanned(security.banned);
-    setBanDetails(security.details);
-    setIsInitialized(true);
   }, [checkSecurityContext]);
 
   useEffect(() => {

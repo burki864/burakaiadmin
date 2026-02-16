@@ -10,13 +10,19 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
-      // Shim process.env to prevent crashes in libraries
-      window.process = { env: { NODE_ENV: 'production' } };
+      // Enhanced Shim process.env to prevent crashes in libraries
+      window.process = { 
+        env: { NODE_ENV: 'production' },
+        browser: true,
+        version: '',
+        versions: {},
+        cwd: function() { return '/' },
+        nextTick: function(cb) { setTimeout(cb, 0) }
+      };
       
       // Global diagnostic logger
       window.onerror = function(msg, url, line, col, error) {
         console.error("Critical System Error: ", msg, error);
-        // If the app is blank for more than 5 seconds, this will help identify why
         return false;
       };
     </script>
@@ -49,6 +55,13 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #475569;
+        }
+        /* Custom scrollbar class for inner containers */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #1e293b;
         }
     </style>
 <script type="importmap">
