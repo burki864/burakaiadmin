@@ -5,10 +5,10 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 import { UserProfile, AdminLog, Message } from '../types.ts';
 
 const MOCK_USERS: UserProfile[] = [
-  { id: 'nexus-admin-master', username: 'Burak', email: 'master@nexus.admin', banned: false, ban_until: null, created_at: new Date().toISOString(), status: 'online' },
-  { id: '1', username: 'kaito_admin', email: 'kaito@nexus.io', banned: false, ban_until: null, created_at: new Date().toISOString(), status: 'online' },
-  { id: '2', username: 'shadow_user', email: 'shadow@dark.net', banned: true, ban_until: '2026-01-01T00:00:00Z', reason: 'Repeated policy violations (Spam)', created_at: new Date(Date.now() - 86400000).toISOString(), status: 'offline' },
-  { id: '3', username: 'beta_tester', email: 'tester@google.com', banned: false, ban_until: null, created_at: new Date(Date.now() - 259200000).toISOString(), status: 'offline' },
+  { id: 'nexus-admin-master', username: 'Burak', email: 'master@nexus.admin', banned: false, banned_until: null, created_at: new Date().toISOString(), status: 'online' },
+  { id: '1', username: 'kaito_admin', email: 'kaito@nexus.io', banned: false, banned_until: null, created_at: new Date().toISOString(), status: 'online' },
+  { id: '2', username: 'shadow_user', email: 'shadow@dark.net', banned: true, banned_until: '2026-01-01T00:00:00Z', reason: 'Repeated policy violations (Spam)', created_at: new Date(Date.now() - 86400000).toISOString(), status: 'offline' },
+  { id: '3', username: 'beta_tester', email: 'tester@google.com', banned: false, banned_until: null, created_at: new Date(Date.now() - 259200000).toISOString(), status: 'offline' },
 ];
 
 const LogIcon: React.FC<{ type: string }> = ({ type }) => {
@@ -52,7 +52,8 @@ const UsersPage: React.FC = () => {
         let uQuery = supabase.from('profiles').select('*').order('created_at', { ascending: false });
         if (filter === 'active') uQuery = uQuery.eq('banned', false);
         if (filter === 'banned') uQuery = uQuery.eq('banned', true);
-        const { data: uData } = await uQuery;
+        const { data: uData, error } = await uQuery;
+        if (error) throw error;
         if (uData) setUsers(uData as UserProfile[]);
 
         const { data: lData } = await supabase
@@ -109,69 +110,67 @@ const UsersPage: React.FC = () => {
 
   const verifyClearance = (e: React.FormEvent) => {
     e.preventDefault();
-    if (clearancePassword === 'burakisbest') {
-      setClearanceLevel('super');
-      if (showClearanceModal?.isBan) {
-        setShowBanModal(showClearanceModal.user);
-      } else {
-        handleAction(showClearanceModal!.user, false);
-      }
-      setShowClearanceModal(null);
-      setClearancePassword('');
-    } else if (clearancePassword.length > 0) {
-      setClearanceLevel('mod');
-      if (showClearanceModal?.isBan) {
-        setShowBanModal(showClearanceModal.user);
-      } else {
-        handleAction(showClearanceModal!.user, false);
-      }
-      setShowClearanceModal(null);
-      setClearancePassword('');
+    const isSuper = clearancePassword === 'burakisbest';
+    setClearanceLevel(isSuper ? 'super' : 'mod');
+    
+    if (showClearanceModal?.isBan) {
+      setShowBanModal(showClearanceModal.user);
+    } else {
+      handleAction(showClearanceModal!.user, false);
     }
+    setShowClearanceModal(null);
+    setClearancePassword('');
   };
 
   const handleAction = async (user: UserProfile, isBan: boolean) => {
     setIsActionLoading(true);
-    let banUntil: string | null = null;
+    let bannedUntil: string | null = null;
 
     if (isBan) {
       const now = new Date();
       if (clearanceLevel === 'super') {
-        if (banDuration === 'permanent') banUntil = '9999-12-31T23:59:59Z';
-        else if (banDuration === 'custom' && customDate) banUntil = new Date(customDate).toISOString();
-        else if (banDuration === '1h') banUntil = new Date(now.getTime() + 3600000).toISOString();
-        else if (banDuration === '1d') banUntil = new Date(now.getTime() + 86400000).toISOString();
+        if (banDuration === 'permanent') bannedUntil = '9999-12-31T23:59:59Z';
+        else if (banDuration === 'custom' && customDate) bannedUntil = new Date(customDate).toISOString();
+        else if (banDuration === '1h') bannedUntil = new Date(now.getTime() + 3600000).toISOString();
+        else if (banDuration === '1d') bannedUntil = new Date(now.getTime() + 86400000).toISOString();
       } else {
         // Moderator restricted to 1 day
-        banUntil = new Date(now.getTime() + 86400000).toISOString();
+        bannedUntil = new Date(now.getTime() + 86400000).toISOString();
       }
     }
 
     if (isSupabaseConfigured) {
       try {
-        await supabase.from('profiles').update({ 
+        // CRITICAL: Ensure columns 'banned', 'banned_until', and 'reason' exist in Supabase
+        const { error: updateError } = await supabase.from('profiles').update({ 
           banned: isBan, 
-          ban_until: banUntil,
+          banned_until: bannedUntil, // Fixed key name
           reason: isBan ? banReason : null
         }).eq('id', user.id);
+
+        if (updateError) {
+          console.error("Supabase Save Error:", updateError.message);
+          alert(`Save Failed: ${updateError.message}. Check your console and SQL setup.`);
+          throw updateError;
+        }
 
         await supabase.from('admin_logs').insert({ 
           action: isBan ? 'BAN' : 'UNBAN', 
           target_id: user.id, 
-          details: `${isBan ? 'Suspended' : 'Reinstated'} ${user.username}. Reason: ${banReason || 'N/A'}` 
+          details: `${isBan ? 'Suspended' : 'Reinstated'} ${user.username}. Duration: ${isBan ? (clearanceLevel === 'super' ? banDuration : '1d') : 'N/A'}` 
         });
         fetchData();
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Action execution failed", e); }
     } else {
       const stored = localStorage.getItem('nexus_demo_users');
       const allUsers = stored ? JSON.parse(stored) : MOCK_USERS;
-      const updatedAll = allUsers.map((u: any) => u.id === user.id ? { ...u, banned: isBan, reason: isBan ? banReason : null, ban_until: banUntil } : u);
+      const updatedAll = allUsers.map((u: any) => u.id === user.id ? { ...u, banned: isBan, reason: isBan ? banReason : null, banned_until: bannedUntil } : u);
       localStorage.setItem('nexus_demo_users', JSON.stringify(updatedAll));
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, banned: isBan, reason: isBan ? banReason : null, ban_until: banUntil } : u));
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, banned: isBan, reason: isBan ? banReason : null, banned_until: bannedUntil } : u));
     }
     
     if (selectedUser?.id === user.id) {
-        setSelectedUser(prev => prev ? { ...prev, banned: isBan, reason: isBan ? banReason : null, ban_until: banUntil } : null);
+        setSelectedUser(prev => prev ? { ...prev, banned: isBan, reason: isBan ? banReason : null, banned_until: bannedUntil } : null);
     }
 
     setShowBanModal(null);
@@ -256,7 +255,7 @@ const UsersPage: React.FC = () => {
                     </td>
                     <td className="px-12 py-8">
                       <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${user.status === 'online' ? 'bg-emerald-500' : 'bg-slate-700'}`}></div>
+                        <div className={`w-3 h-3 rounded-full ${user.status === 'online' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-slate-700'}`}></div>
                         <span className="text-[10px] font-black uppercase text-slate-500">{user.status || 'Offline'}</span>
                       </div>
                     </td>
@@ -331,17 +330,17 @@ const UsersPage: React.FC = () => {
         </div>
       )}
 
-      {/* User Detail Overlay - Fixed TypeError and Added Scrolling */}
+      {/* User Detail Overlay */}
       {selectedUser && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 md:p-8 bg-slate-950/98 backdrop-blur-3xl">
           <div className="relative bg-slate-900 border border-slate-800 rounded-[3rem] md:rounded-[5rem] w-full max-w-6xl h-[85vh] overflow-hidden flex flex-col md:flex-row shadow-2xl animate-in slide-in-from-bottom-12">
             
             {/* Left Info Panel (Scrollable) */}
             <div className="w-full md:w-[400px] bg-slate-950/50 border-b md:border-b-0 md:border-r border-slate-800 p-10 md:p-16 flex flex-col items-center text-center overflow-y-auto custom-scrollbar">
-                <button onClick={() => setSelectedUser(null)} className="absolute top-10 left-10 p-4 bg-slate-800 rounded-2xl text-slate-400 hover:bg-slate-700"><X size={20} /></button>
+                <button onClick={() => setSelectedUser(null)} className="absolute top-10 left-10 p-4 bg-slate-800 rounded-2xl text-slate-400 hover:bg-slate-700 transition-all"><X size={20} /></button>
                 <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${selectedUser.id}`} className="w-40 h-40 rounded-[3rem] bg-slate-900 border-4 border-slate-800 p-4 mb-10 shadow-2xl" />
                 <h3 className="text-4xl font-black text-white mb-2 uppercase">{selectedUser.username}</h3>
-                <p className="text-slate-500 font-bold text-xs uppercase mb-12">REF: {String(selectedUser.id).slice(0, 12)}</p>
+                <p className="text-slate-500 font-bold text-xs uppercase mb-12 tracking-widest">REF: {String(selectedUser.id).slice(0, 12)}</p>
 
                 <div className="w-full space-y-4 mb-auto">
                     <div className="p-6 bg-slate-900/50 rounded-3xl border border-slate-800 flex items-center gap-5">
@@ -358,16 +357,16 @@ const UsersPage: React.FC = () => {
                                 <p className="text-[10px] font-black text-rose-500 uppercase">Suspension Active</p>
                              </div>
                              <p className="text-xs font-bold text-rose-200">{selectedUser.reason || 'N/A'}</p>
-                             <p className="text-[9px] text-rose-400 font-mono mt-2">Ends: {selectedUser.ban_until ? new Date(selectedUser.ban_until).toLocaleString() : 'PERMANENT'}</p>
+                             <p className="text-[9px] text-rose-400 font-mono mt-2">Ends: {selectedUser.banned_until ? new Date(selectedUser.banned_until).toLocaleString() : 'PERMANENT'}</p>
                         </div>
                     )}
                 </div>
 
                 <div className="w-full grid grid-cols-1 gap-4 mt-10">
                     {selectedUser.banned ? (
-                        <button onClick={() => setShowClearanceModal({user: selectedUser, isBan: false})} className="py-6 bg-emerald-600 rounded-[2rem] font-black text-xs uppercase text-white hover:bg-emerald-500 shadow-2xl"><Unlock size={18} className="inline mr-2" /> Reinstate</button>
+                        <button onClick={() => setShowClearanceModal({user: selectedUser, isBan: false})} className="py-6 bg-emerald-600 rounded-[2rem] font-black text-xs uppercase text-white hover:bg-emerald-500 shadow-2xl transition-all"><Unlock size={18} className="inline mr-2" /> Reinstate</button>
                     ) : (
-                        <button onClick={() => setShowClearanceModal({user: selectedUser, isBan: true})} className="py-6 bg-rose-600 rounded-[2rem] font-black text-xs uppercase text-white hover:bg-rose-500 shadow-2xl"><UserX size={18} className="inline mr-2" /> Suspend</button>
+                        <button onClick={() => setShowClearanceModal({user: selectedUser, isBan: true})} className="py-6 bg-rose-600 rounded-[2rem] font-black text-xs uppercase text-white hover:bg-rose-500 shadow-2xl transition-all"><UserX size={18} className="inline mr-2" /> Suspend</button>
                     )}
                     <button onClick={() => setShowDeleteModal(selectedUser)} className="py-6 bg-slate-800 rounded-[2rem] font-black text-xs uppercase text-slate-400 hover:bg-rose-700 hover:text-white transition-all"><Trash2 size={18} className="inline mr-2" /> Purge</button>
                 </div>
@@ -377,20 +376,22 @@ const UsersPage: React.FC = () => {
             <div className="flex-1 p-10 md:p-20 flex flex-col bg-slate-900/30 overflow-hidden">
                 <div className="flex items-center gap-6 mb-12">
                     <MessageSquare className="text-indigo-500" size={32} />
-                    <h4 className="text-3xl font-black uppercase text-white">Broadcast History</h4>
+                    <h4 className="text-3xl font-black uppercase text-white tracking-tighter">Broadcast History</h4>
                     <div className="h-px flex-1 bg-slate-800"></div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pr-4">
                     {messagesLoading ? (
                         <div className="animate-pulse space-y-4"><div className="h-32 bg-slate-800/40 rounded-[2.5rem]"></div><div className="h-32 bg-slate-800/40 rounded-[2.5rem]"></div></div>
+                    ) : userMessages.length === 0 ? (
+                        <div className="py-40 text-center opacity-10 uppercase font-black tracking-[0.5em] text-2xl">No Signal History</div>
                     ) : userMessages.map(msg => (
                         <div key={msg.id} className="p-10 bg-slate-950/40 border border-slate-800/80 rounded-[3rem] hover:border-indigo-500/30 transition-all">
                             <div className="flex justify-between items-center mb-4">
                                 <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">SIGNAL_REF: {String(msg.id).slice(0, 8)}</span>
                                 <span className="text-[10px] text-slate-600 font-mono uppercase">{new Date(msg.created_at).toLocaleString()}</span>
                             </div>
-                            <p className="text-lg text-slate-300 font-medium">"{msg.content}"</p>
+                            <p className="text-lg text-slate-300 font-medium leading-relaxed italic">"{msg.content}"</p>
                         </div>
                     ))}
                 </div>
@@ -408,37 +409,40 @@ const UsersPage: React.FC = () => {
                     <ShieldAlert size={48} />
                 </div>
                 <h3 className="text-4xl font-black text-center text-white mb-6 uppercase">Restriction Protocol</h3>
-                <p className="text-slate-500 font-bold text-center text-sm uppercase mb-10">Restricting access for <strong className="text-white">@{showBanModal.username}</strong></p>
+                <p className="text-slate-500 font-bold text-center text-sm uppercase mb-10">Suspending <strong className="text-white">@{showBanModal.username}</strong> • Clearance: <span className="text-indigo-400">{clearanceLevel?.toUpperCase()}</span></p>
 
                 <div className="space-y-8">
                     <div className="text-left">
-                        <label className="block text-[10px] font-black text-slate-600 uppercase mb-3 px-2">Reason (Mandatory)</label>
+                        <label className="block text-[10px] font-black text-slate-600 uppercase mb-3 px-2 tracking-widest">Termination Reason (Mandatory)</label>
                         <textarea 
                             value={banReason}
                             onChange={(e) => setBanReason(e.target.value)}
-                            placeholder="Describe violation..."
-                            className="w-full bg-slate-950 border border-slate-800 rounded-3xl p-8 text-white focus:border-indigo-500 outline-none h-32 resize-none font-medium"
+                            placeholder="Describe violation (Spam, Harassment, etc)..."
+                            className="w-full bg-slate-950 border border-slate-800 rounded-3xl p-8 text-white focus:border-indigo-500 outline-none h-32 resize-none font-medium text-sm transition-all"
                         />
                     </div>
 
                     <div className="text-left">
-                        <label className="block text-[10px] font-black text-slate-600 uppercase mb-3 px-2">Duration Level: {clearanceLevel === 'super' ? 'SUPERADMIN' : 'MODERATOR'}</label>
+                        <label className="block text-[10px] font-black text-slate-600 uppercase mb-3 px-2 tracking-widest">Restriction Duration</label>
                         <div className="grid grid-cols-2 gap-3">
                             {clearanceLevel === 'super' ? (
                                 <>
-                                    <button onClick={() => setBanDuration('1h')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border ${banDuration === '1h' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>1 Hour</button>
-                                    <button onClick={() => setBanDuration('1d')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border ${banDuration === '1d' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>1 Day</button>
-                                    <button onClick={() => setBanDuration('7d')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border ${banDuration === '7d' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>1 Week</button>
-                                    <button onClick={() => setBanDuration('permanent')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border ${banDuration === 'permanent' ? 'bg-rose-600 border-rose-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>Permanent</button>
-                                    <button onClick={() => setBanDuration('custom')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border ${banDuration === 'custom' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>Custom</button>
+                                    <button onClick={() => setBanDuration('1h')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border transition-all ${banDuration === '1h' ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}>1 Hour</button>
+                                    <button onClick={() => setBanDuration('1d')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border transition-all ${banDuration === '1d' ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}>1 Day</button>
+                                    <button onClick={() => setBanDuration('7d')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border transition-all ${banDuration === '7d' ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}>1 Week</button>
+                                    <button onClick={() => setBanDuration('permanent')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border transition-all ${banDuration === 'permanent' ? 'bg-rose-600 border-rose-500 text-white shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}>Permanent</button>
+                                    <button onClick={() => setBanDuration('custom')} className={`py-4 rounded-2xl text-[10px] font-black uppercase border transition-all ${banDuration === 'custom' ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-700'}`}>Custom</button>
                                     {banDuration === 'custom' && (
-                                        <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className="col-span-2 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white text-xs mt-2" />
+                                        <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)} className="col-span-2 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white text-xs mt-2 focus:border-indigo-500 outline-none" />
                                     )}
                                 </>
                             ) : (
-                                <div className="col-span-2 p-6 bg-slate-950/50 border border-slate-800 rounded-3xl flex items-center justify-between">
-                                    <span className="text-[10px] font-black text-slate-500 uppercase">Fixed Duration</span>
-                                    <span className="text-xs font-bold text-white">1 Day Limited Ban</span>
+                                <div className="col-span-2 p-6 bg-indigo-500/5 border border-indigo-500/20 rounded-3xl flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <Clock className="text-indigo-500" size={18} />
+                                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Fixed Duration</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-white uppercase">1 Day Temporary Ban</span>
                                 </div>
                             )}
                         </div>
@@ -446,13 +450,13 @@ const UsersPage: React.FC = () => {
                 </div>
 
                 <div className="flex gap-6 mt-12">
-                    <button onClick={() => { setShowBanModal(null); setClearanceLevel(null); }} className="flex-1 py-8 bg-slate-800 rounded-3xl text-xs font-black uppercase text-slate-400">Abort</button>
+                    <button onClick={() => { setShowBanModal(null); setClearanceLevel(null); }} className="flex-1 py-8 bg-slate-800 hover:bg-slate-700 rounded-3xl text-xs font-black uppercase tracking-widest text-slate-400 transition-all border border-slate-700">Abort</button>
                     <button 
                         onClick={() => handleAction(showBanModal, true)} 
-                        disabled={!banReason.trim()}
-                        className="flex-1 py-8 bg-rose-600 rounded-3xl text-xs font-black uppercase text-white hover:bg-rose-500 shadow-xl disabled:opacity-30"
+                        disabled={isActionLoading || !banReason.trim()}
+                        className="flex-1 py-8 bg-rose-600 hover:bg-rose-500 rounded-3xl text-xs font-black uppercase tracking-widest text-white shadow-2xl transition-all disabled:opacity-30 flex items-center justify-center gap-3 active:scale-95"
                     >
-                        Execute Restriction
+                        {isActionLoading ? <Loader2 size={18} className="animate-spin" /> : 'Confirm Restriction'}
                     </button>
                 </div>
             </div>
@@ -465,11 +469,11 @@ const UsersPage: React.FC = () => {
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-8 bg-slate-950/98 backdrop-blur-3xl">
           <div className="bg-slate-950 border border-rose-500/30 p-20 rounded-[4rem] w-full max-w-xl text-center shadow-2xl animate-in zoom-in-95">
             <AlertTriangle size={80} className="text-rose-600 mx-auto mb-10 animate-pulse" />
-            <h3 className="text-4xl font-black text-white mb-6 uppercase">Confirm Purge?</h3>
-            <p className="text-slate-400 font-bold text-base mb-16 leading-relaxed">Permanently delete <strong className="text-rose-500">@{showDeleteModal.username}</strong> from the mainframe. This action is terminal.</p>
+            <h3 className="text-4xl font-black text-white mb-6 uppercase tracking-tighter">Confirm Purge?</h3>
+            <p className="text-slate-400 font-bold text-base mb-16 leading-relaxed">Permanently delete <strong className="text-rose-500">@{showDeleteModal.username}</strong> from the mainframe. This action is irreversible.</p>
             <div className="flex gap-6">
-                <button onClick={() => setShowDeleteModal(null)} className="flex-1 py-8 bg-slate-900 rounded-3xl text-xs font-black uppercase text-slate-500 border border-slate-800">Abort</button>
-                <button onClick={() => handleDeleteUser(showDeleteModal)} className="flex-1 py-8 bg-rose-700 rounded-3xl text-xs font-black uppercase text-white hover:bg-rose-600 shadow-2xl">Purge Record</button>
+                <button onClick={() => setShowDeleteModal(null)} className="flex-1 py-8 bg-slate-900 rounded-3xl text-xs font-black uppercase tracking-widest text-slate-500 border border-slate-800 hover:bg-slate-800 transition-all">Abort</button>
+                <button onClick={() => handleDeleteUser(showDeleteModal)} className="flex-1 py-8 bg-rose-700 hover:bg-rose-600 rounded-3xl text-xs font-black uppercase tracking-widest text-white shadow-2xl transition-all flex items-center justify-center gap-3 active:scale-95">Purge Record</button>
             </div>
           </div>
         </div>

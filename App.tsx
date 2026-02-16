@@ -46,7 +46,9 @@ const App: React.FC = () => {
           .maybeSingle();
 
         if (!dbError && profile) {
-          return { banned: !!profile.banned, details: profile };
+          // Check if ban is still active (timestamp check)
+          const isCurrentlyBanned = profile.banned && (!profile.banned_until || new Date(profile.banned_until) > new Date());
+          return { banned: !!isCurrentlyBanned, details: profile };
         }
       }
       

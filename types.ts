@@ -5,8 +5,8 @@ export interface UserProfile {
   email: string;
   avatar_url?: string;
   banned: boolean;
-  ban_until: string | null;
-  reason?: string; // Justification for the ban
+  banned_until: string | null; // Changed from ban_until
+  reason?: string; 
   created_at: string;
   status?: 'online' | 'offline';
 }
