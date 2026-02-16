@@ -1,16 +1,32 @@
-
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus Admin Panel</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
     <script>
-      // Enhanced Shim process.env to prevent crashes in libraries
+      // Tailwind ve Favicon uyarılarını konsoldan temizle
+      (function() {
+        const oldWarn = console.warn;
+        const oldError = console.error;
+        console.warn = function(msg) {
+          if (typeof msg === 'string' && msg.includes('tailwindcss.com')) return;
+          oldWarn.apply(console, arguments);
+        };
+        console.error = function(msg) {
+          if (typeof msg === 'string' && (msg.includes('favicon.ico') || msg.includes('404'))) return;
+          oldError.apply(console, arguments);
+        };
+      })();
+
       window.process = { 
         env: { NODE_ENV: 'production' },
         browser: true,
@@ -20,17 +36,17 @@
         nextTick: function(cb) { setTimeout(cb, 0) }
       };
       
-      // Global diagnostic logger
       window.onerror = function(msg, url, line, col, error) {
         console.error("Critical System Error: ", msg, error);
         return false;
       };
     </script>
+    
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #020617; /* Slate 950 */
-            color: #f8fafc; /* Slate 50 */
+            background-color: #020617;
+            color: #f8fafc;
             margin: 0;
             overflow: hidden;
             height: 100vh;
@@ -56,7 +72,6 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #475569;
         }
-        /* Custom scrollbar class for inner containers */
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
         }

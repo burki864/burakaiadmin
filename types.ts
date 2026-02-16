@@ -2,10 +2,11 @@
 export interface UserProfile {
   id: string;
   username: string;
+  full_name?: string; // New field for real names
   email: string;
   avatar_url?: string;
   banned: boolean;
-  banned_until: string | null; // Changed from ban_until
+  banned_until: string | null;
   reason?: string; 
   created_at: string;
   status?: 'online' | 'offline';
