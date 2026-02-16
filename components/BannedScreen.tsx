@@ -1,12 +1,14 @@
 
 import React from 'react';
-import { ShieldAlert, LogOut, Clock, Globe, AlertCircle } from 'lucide-react';
+// Fixed: Added Fingerprint to the lucide-react import
+import { ShieldAlert, LogOut, Clock, Globe, AlertCircle, Info, Fingerprint } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase.ts';
 
 interface BannedScreenProps {
   details?: {
     banned_until?: string | null;
     username?: string;
+    reason?: string;
   };
   lang?: 'tr' | 'en';
 }
@@ -35,7 +37,6 @@ const TRANSLATIONS = {
 };
 
 const BannedScreen: React.FC<BannedScreenProps> = ({ details, lang = 'tr' }) => {
-  // CRASH PROTECTION: Eğer lang tanımsızsa veya TRANSLATIONS içinde yoksa Türkçe'ye düş.
   const t = TRANSLATIONS[lang] || TRANSLATIONS.tr;
 
   const handleLogout = async () => {
@@ -47,18 +48,15 @@ const BannedScreen: React.FC<BannedScreenProps> = ({ details, lang = 'tr' }) => 
       }
       window.location.reload();
     } catch (e) {
-      // Fallback for logout failure
       localStorage.clear();
       window.location.href = '/';
     }
   };
 
-  // TARİH FORMATLAMA (Fail-Safe)
   const formatUntil = (dateStr?: string | null) => {
     if (!dateStr) return t.untilPermanent;
     try {
       const date = new Date(dateStr);
-      // Geçersiz tarih kontrolü (NaN)
       if (isNaN(date.getTime())) return t.untilPermanent;
       
       return date.toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR', {
@@ -75,60 +73,60 @@ const BannedScreen: React.FC<BannedScreenProps> = ({ details, lang = 'tr' }) => 
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Visual background layers */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-rose-600/5 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-rose-600/5 rounded-full blur-[160px] pointer-events-none"></div>
       
-      <div className="w-full max-w-2xl relative animate-in fade-in zoom-in-95 duration-700">
-        <div className="bg-slate-900/40 backdrop-blur-3xl border border-rose-500/20 p-12 md:p-20 rounded-[4rem] shadow-[0_0_120px_rgba(244,63,94,0.08)] text-center">
+      <div className="w-full max-w-3xl relative animate-in fade-in zoom-in-95 duration-1000">
+        <div className="bg-slate-900/40 backdrop-blur-3xl border border-rose-500/20 p-12 md:p-24 rounded-[5rem] shadow-[0_0_120px_rgba(244,63,94,0.1)] text-center">
           
-          <div className="w-32 h-32 bg-rose-600/10 text-rose-500 rounded-[3rem] flex items-center justify-center mx-auto mb-10 border border-rose-500/20 shadow-2xl shadow-rose-600/10">
-            <ShieldAlert size={64} className="animate-pulse" />
+          <div className="w-40 h-40 bg-rose-600/10 text-rose-500 rounded-[3.5rem] flex items-center justify-center mx-auto mb-12 border border-rose-500/20 shadow-2xl animate-pulse">
+            <ShieldAlert size={80} />
           </div>
 
-          <h1 className="text-4xl md:text-5xl font-black tracking-tighter text-white mb-4 uppercase">{t.title}</h1>
-          <p className="text-slate-500 font-bold text-sm md:text-base mb-12 uppercase tracking-widest leading-relaxed">
-            {details?.username ? <span className="text-rose-400">@{details.username}, </span> : ''}{t.subtitle}
+          <h1 className="text-5xl md:text-6xl font-black tracking-tighter text-white mb-6 uppercase">{t.title}</h1>
+          <p className="text-slate-400 font-bold text-lg mb-16 uppercase tracking-widest leading-relaxed px-10">
+            {details?.username ? <span className="text-rose-500">@{details.username}, </span> : ''}{t.subtitle}
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-            <div className="p-8 bg-slate-950/50 rounded-[2.5rem] border border-slate-800/80 text-left hover:border-slate-700 transition-colors group">
-              <div className="flex items-center gap-3 mb-3 text-slate-500 group-hover:text-slate-400 transition-colors">
-                <AlertCircle size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">{t.reasonTitle}</span>
+          <div className="grid grid-cols-1 gap-8 mb-16">
+            <div className="p-10 bg-slate-950/60 rounded-[3rem] border border-slate-800/80 text-left">
+              <div className="flex items-center gap-4 mb-4 text-slate-500">
+                <Info size={20} className="text-rose-500" />
+                <span className="text-xs font-black uppercase tracking-[0.2em]">{t.reasonTitle}</span>
               </div>
-              <p className="text-xs font-bold text-slate-300 leading-relaxed uppercase">{t.reasonDefault}</p>
+              <p className="text-lg font-bold text-slate-200 leading-relaxed italic">
+                "{details?.reason || t.reasonDefault}"
+              </p>
             </div>
 
-            <div className="p-8 bg-slate-950/50 rounded-[2.5rem] border border-slate-800/80 text-left hover:border-rose-900/30 transition-colors group">
-              <div className="flex items-center gap-3 mb-3 text-slate-500 group-hover:text-rose-400/60 transition-colors">
-                <Clock size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">{t.untilTitle}</span>
+            <div className="p-10 bg-slate-950/40 rounded-[3rem] border border-slate-800/80 text-left flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Clock size={20} className="text-slate-500" />
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{t.untilTitle}</span>
               </div>
-              <p className="text-xs font-bold text-rose-500 leading-relaxed uppercase">
+              <p className="text-lg font-black text-rose-500 tracking-tighter">
                 {formatUntil(details?.banned_until)}
               </p>
             </div>
           </div>
 
-          <div className="space-y-8">
+          <div className="space-y-10">
             <button 
               onClick={handleLogout}
-              className="w-full py-6 bg-rose-600 hover:bg-rose-500 text-white rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 shadow-2xl shadow-rose-600/20 active:scale-95"
+              className="w-full py-8 bg-rose-600 hover:bg-rose-500 text-white rounded-[2.5rem] font-black text-xs uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 shadow-[0_20px_50px_rgba(225,29,72,0.3)] active:scale-95"
             >
-              <LogOut size={18} />
+              <LogOut size={20} />
               {t.actionLabel}
             </button>
             
-            <p className="text-[10px] text-slate-600 font-bold uppercase tracking-[0.1em] px-12 leading-relaxed opacity-60">
+            <p className="text-[11px] text-slate-600 font-bold uppercase tracking-[0.2em] px-20 leading-relaxed">
               {t.footer}
             </p>
           </div>
         </div>
 
-        <div className="mt-12 flex items-center justify-center gap-4 opacity-30">
-          <Globe size={16} className="text-slate-500" />
-          <div className="h-4 w-px bg-slate-800"></div>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nexus Command - High Security Infrastructure</p>
+        <div className="mt-16 flex items-center justify-center gap-6 opacity-20">
+          <Fingerprint size={20} className="text-slate-500" />
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Protocol 77-B Terminal Node</p>
         </div>
       </div>
     </div>

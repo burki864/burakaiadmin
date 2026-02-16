@@ -24,26 +24,22 @@ const LoginPage: React.FC = () => {
       const trimmedPass = password.trim();
       
       if (ADMIN_PASSWORDS.includes(trimmedPass)) {
+        // Determine role based on password
+        const isSuper = trimmedPass === 'burakisbest';
+        
         const mockSession = { 
           user: { 
             email: 'master@nexus.admin', 
             id: 'nexus-admin-master',
-            name: 'Burak'
+            name: 'Burak',
+            role: isSuper ? 'SuperAdmin' : 'Moderator' // NEW: Role detection
           }, 
           expires_at: Date.now() + 3600000 
         };
 
-        // 1. Commit to Local Storage
         localStorage.setItem('nexus_demo_session', JSON.stringify(mockSession));
-        
-        // 2. TRIGGER AUTH BRIDGE (CRITICAL FIX)
-        // This notifies App.tsx to re-run its sync logic immediately
         window.dispatchEvent(new Event('nexus-auth-refresh'));
-
-        // 3. UI Gecikmesi (Hissiyat için)
         await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Navigation is handled automatically by App.tsx observing the state change
       } else {
         throw new Error('Geçersiz Güvenlik Anahtarı. Yetkisiz Erişim Girişimi Loglandı.');
       }

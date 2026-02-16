@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage.tsx';
@@ -23,6 +24,13 @@ const App: React.FC = () => {
     
     // ÖZEL DURUM: Manuel Admin girişi (burakisbest vb.) ise direkt geçiş ver
     if (currentSession.user.id === 'nexus-admin-master') {
+      // Check if even the master is banned in demo storage
+      const stored = localStorage.getItem('nexus_demo_users');
+      if (stored) {
+         const users = JSON.parse(stored);
+         const me = users.find((u: any) => u.id === 'nexus-admin-master');
+         if (me?.banned) return { banned: true, details: me };
+      }
       return { banned: false, details: { username: 'Burak', role: 'SuperAdmin' } };
     }
 
@@ -30,8 +38,7 @@ const App: React.FC = () => {
       if (isSupabaseConfigured) {
         const { data: profile, error: dbError } = await supabase
           .from('profiles')
-          // DÜZELTME: Tablonla uyumlu olması için 'banned_until' yaptık
-          .select('banned, banned_until, username') 
+          .select('banned, banned_until, username, reason') 
           .eq('id', currentSession.user.id)
           .maybeSingle();
 
@@ -42,7 +49,7 @@ const App: React.FC = () => {
       
       // Local/Demo Auth Logic
       const demoUsers = JSON.parse(localStorage.getItem('nexus_demo_users') || '[]');
-      const me = demoUsers.find((u: any) => u.email === currentSession.user.email);
+      const me = demoUsers.find((u: any) => u.id === currentSession.user.id || u.email === currentSession.user.email);
       return { banned: !!me?.banned, details: me || null };
     } catch (e) {
       console.error("Security probe failed:", e);
@@ -54,13 +61,11 @@ const App: React.FC = () => {
   const syncAuthState = useCallback(async () => {
     let currentSession = null;
 
-    // ÖNCE: Manuel local session kontrolü (Öncelikli)
     const rawLocal = localStorage.getItem('nexus_demo_session');
     
     if (rawLocal) {
       currentSession = JSON.parse(rawLocal);
     } 
-    // SONRA: Supabase session kontrolü
     else if (isSupabaseConfigured) {
       const { data: { session: sbSession } } = await supabase.auth.getSession();
       currentSession = sbSession;
@@ -78,7 +83,7 @@ const App: React.FC = () => {
     syncAuthState();
 
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'nexus_demo_session') syncAuthState();
+      if (e.key === 'nexus_demo_session' || e.key === 'nexus_demo_users') syncAuthState();
     };
 
     const handleInternalAuth = () => {
@@ -103,24 +108,16 @@ const App: React.FC = () => {
     };
   }, [syncAuthState]);
 
-  // --- RENDER STATES ---
   if (!isInitialized) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-950">
-        <div className="relative">
-          <Loader2 className="animate-spin h-16 w-16 text-indigo-500/20" strokeWidth={1} />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-4 w-4 bg-indigo-500 rounded-full animate-pulse"></div>
-          </div>
-        </div>
-        <p className="mt-6 text-indigo-500/40 font-mono text-[9px] tracking-[0.6em] uppercase animate-pulse">
-          Establishing Uplink...
-        </p>
+        <Loader2 className="animate-spin h-12 w-12 text-indigo-500 mb-4" />
+        <p className="text-indigo-500/40 font-mono text-[10px] tracking-[0.4em] animate-pulse uppercase">Syncing Uplink...</p>
       </div>
     );
   }
 
-  if (isBanned) {
+  if (isBanned && session) {
     return <BannedScreen details={banDetails || {}} lang="tr" />;
   }
 
