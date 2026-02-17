@@ -6,6 +6,7 @@ import DashboardLayout from './components/DashboardLayout.tsx';
 import OverviewPage from './pages/OverviewPage.tsx';
 import UsersPage from './pages/UsersPage.tsx';
 import MessagesPage from './pages/MessagesPage.tsx';
+import AdminCommsPage from './pages/AdminCommsPage.tsx';
 import LogsPage from './pages/LogsPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 import BannedScreen from './components/BannedScreen.tsx';
@@ -34,7 +35,7 @@ const App: React.FC = () => {
       } catch (e) {
         console.warn("Failed to parse demo users", e);
       }
-      return { banned: false, details: { username: 'Burak', role: 'SuperAdmin' } };
+      return { banned: false, details: { username: currentSession.user.name || 'Burak', role: currentSession.user.role || 'SuperAdmin' } };
     }
 
     try {
@@ -46,13 +47,11 @@ const App: React.FC = () => {
           .maybeSingle();
 
         if (!dbError && profile) {
-          // Check if ban is still active (timestamp check)
           const isCurrentlyBanned = profile.banned && (!profile.banned_until || new Date(profile.banned_until) > new Date());
           return { banned: !!isCurrentlyBanned, details: profile };
         }
       }
       
-      // Local/Demo Auth Logic
       const stored = localStorage.getItem('nexus_demo_users');
       if (stored) {
         const demoUsers = JSON.parse(stored);
@@ -66,7 +65,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- SYNC ENGINE ---
   const syncAuthState = useCallback(async () => {
     try {
       let currentSession = null;
@@ -155,6 +153,7 @@ const App: React.FC = () => {
           <Route path="users" element={<UsersPage />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="messages" element={<MessagesPage />} />
+          <Route path="comms" element={<AdminCommsPage />} />
           <Route path="logs" element={<LogsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

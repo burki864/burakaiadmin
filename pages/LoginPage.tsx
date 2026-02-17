@@ -2,13 +2,13 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, ArrowRight, Loader2, Info } from 'lucide-react';
 
-const ADMIN_PASSWORDS = [
-  'burakaiadmin109',
-  'burakaiadmin345',
-  'burakaiadmin876',
-  'burakisbest', 
-  'hepinizinamk'  
-];
+const ADMIN_MAP: Record<string, { name: string, role: string }> = {
+  'burakisbest': { name: 'Burak', role: 'SuperAdmin' },
+  'burakaiadmin876': { name: 'Eymen', role: 'Moderator' },
+  'burakaiadmin345': { name: 'Atakan', role: 'Moderator' },
+  'burakaiadmin109': { name: 'Admin', role: 'Moderator' },
+  'hepinizinamk': { name: 'Root', role: 'SuperAdmin' }
+};
 
 const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
@@ -22,17 +22,15 @@ const LoginPage: React.FC = () => {
 
     try {
       const trimmedPass = password.trim();
+      const identity = ADMIN_MAP[trimmedPass];
       
-      if (ADMIN_PASSWORDS.includes(trimmedPass)) {
-        // Determine role based on password
-        const isSuper = trimmedPass === 'burakisbest';
-        
+      if (identity) {
         const mockSession = { 
           user: { 
             email: 'master@nexus.admin', 
             id: 'nexus-admin-master',
-            name: 'Burak',
-            role: isSuper ? 'SuperAdmin' : 'Moderator' // NEW: Role detection
+            name: identity.name,
+            role: identity.role
           }, 
           expires_at: Date.now() + 3600000 
         };
@@ -56,8 +54,8 @@ const LoginPage: React.FC = () => {
           <div className="inline-flex items-center justify-center w-24 h-24 bg-indigo-600 rounded-[2.5rem] mb-6 shadow-2xl shadow-indigo-500/30 transform transition-all hover:scale-105 active:scale-95 cursor-none">
             <ShieldCheck className="w-12 h-12 text-white" />
           </div>
-          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">Nexus Command</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em]">Biometric Auth Required</p>
+          <h1 className="text-4xl font-black tracking-tighter text-white mb-2 uppercase">BurakAI Admin</h1>
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em]">Bakmayamı Geldin KRAL</p>
         </div>
 
         <div className="bg-slate-900/40 backdrop-blur-3xl border border-slate-800 p-10 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-500">
